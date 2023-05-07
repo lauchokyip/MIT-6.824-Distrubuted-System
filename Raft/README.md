@@ -110,6 +110,7 @@ There are some cases where select statement will select `foo()` and it will be b
 
 ## Progress
 May 5 - Trying to figure out ApplyMsg
+May 7 - Passed 2B
 
 ## Good resources:
 * http://nil.csail.mit.edu/6.824/2022/notes/raft_diagram.pdf
