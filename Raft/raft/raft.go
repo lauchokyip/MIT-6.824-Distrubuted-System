@@ -439,6 +439,10 @@ func (rf *Raft) sendAppendEntriesToAllServers(sendEmpty bool) {
 		go func(i int) {
 			rf.Lock()
 			defer rf.Unlock()
+			// leader has already step down
+			if rf.state != Leader {
+				return
+			}
 
 			var (
 				prevLogTerm, prevLogIndex int
@@ -475,16 +479,15 @@ func (rf *Raft) sendAppendEntriesToAllServers(sendEmpty bool) {
 			rf.Unlock()
 			ok := rf.sendAppendEntries(i, &args, &reply)
 			rf.Lock()
+			// leader has already step down
+			if rf.state != Leader {
+				return
+			}
 
 			if !ok {
 				log.Printf("server %d AppendEntries reply from server %d arrives late\n", rf.me, i)
 			} else {
 				log.Printf("server %d received AppendEntries reply from server %d\n", rf.me, i)
-
-				// leader has already step down
-				if rf.state != Leader {
-					return
-				}
 				// If successful: update nextIndex and matchIndex for follower
 				if reply.Sucess {
 					rf.nextIndex[i] += len(entries)
@@ -518,11 +521,14 @@ func (rf *Raft) sendAppendEntriesToAllServers(sendEmpty bool) {
 		reply := <-ch
 		log.Printf("server %d AppendEntries received reply\n", rf.me)
 		rf.Lock()
-
 		// If RPC request or response contains term T > currentTerm:
 		// set currentTerm = T, convert to follower
 		if reply.Term > rf.currentTerm {
 			rf.stepdownIfNecessary(reply.Term)
+			return
+		}
+		// leader has already step down
+		if rf.state != Leader {
 			return
 		}
 
@@ -579,6 +585,10 @@ func (rf *Raft) beginElection() <-chan struct{} {
 
 	go func() {
 		rf.Lock()
+		// Candidate has already step down
+		if rf.state != Candidate {
+			return
+		}
 		log.Printf("server %d begins election\n", rf.me)
 		defer func() {
 			rf.Unlock()
@@ -636,7 +646,11 @@ func (rf *Raft) beginElection() <-chan struct{} {
 			// set currentTerm = T, convert to follower
 			if reply.Term > rf.currentTerm {
 				rf.stepdownIfNecessary(reply.Term)
-				break
+				return
+			}
+			// Candidate has already step down
+			if rf.state != Candidate {
+				return
 			}
 			if reply.VoteGranted {
 				count++
@@ -644,7 +658,7 @@ func (rf *Raft) beginElection() <-chan struct{} {
 			if rf.isMajority(count) {
 				log.Printf("server %d received majority votes %d\n", rf.me, count)
 				elected <- struct{}{}
-				break
+				return
 			}
 		}
 	}()
@@ -683,7 +697,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 				Command: command,
 				Term:    term,
 			})
-		log.Printf("server %d appended logs\n", rf.me)
+		log.Printf("server %d appended logs %#v in term %d\n", rf.me, command, term)
 
 	}
 
@@ -712,7 +726,6 @@ func (rf *Raft) killed() bool {
 func (rf *Raft) generateRandomElectionTimeout() time.Duration {
 	randRange := rand.Intn(electionTimeoutMax - electionTimeoutMin)
 	randElectionTimeout := time.Duration(electionTimeoutMin+randRange) * time.Millisecond
-
 	return randElectionTimeout
 }
 
